@@ -5,6 +5,7 @@
 # @type Ducted Fan
 #
 # Author: Chaoheng Meng <chaohengmeng@163.com>
+# Translator: Qingxi Tang <qingxitangt@163.com>
 
 
 
@@ -14,21 +15,21 @@ set VEHICLE_TYPE df
 param set-default CA_AIRFRAME 16 # 4 or 9 or 16
 
 # INDI unit contract for ducted-fan airframes:
-# DF_USE_INDI and DF_USE_ACC_INDI require CA_AIRFRAME=16/17 so allocation_value
-# is published in physical units. PX4 does not validate the numerical B values;
-# the user must ensure CA_SV_CS*_TRQ_* maps surface deflection [rad] to angular
+# DF_USE_INDI and DF_USE_ACC_INDI require CA_AIRFRAME=16/17 so allocation_value 
+# is published in physical units. PX4 does not validate the numerical（数值型） B values;
+# the user must ensure CA_SV_CS*_TRQ_* maps（将） surface deflection [rad] to angular
 # acceleration [rad/s^2], CA_ROTOR*_CT/KM/axis maps motor physical thrust [N]
-# into force/moment rows, and DF_CS_MAX, DF_MOT_MAX, and DF_ACC_MASS match the
+# into force/moment rows, and DF_CS_MAX, DF_MOT_MAX, and DF_ACC_MASS match（匹配） the
 # vehicle.
 
-param set-default DF_ROLLRATE_P 0.4
-param set-default DF_ROLLRATE_I 0.2
+param set-default DF_ROLLRATE_P 0.4 # Ducted-Fan 横滚角速度环 P 增益，决定横滚角速度误差的比例修正力度
+param set-default DF_ROLLRATE_I 0.2 # Ducted-Fan 横滚角速度环 I 增益，用于消除横滚角速度稳态误差
 
-param set-default DF_PITCHRATE_P 0.4
-param set-default DF_PITCHRATE_I 0.2
+param set-default DF_PITCHRATE_P 0.4 # Ducted-Fan 俯仰角速度环 P 增益，决定俯仰角速度误差的比例修正力度
+param set-default DF_PITCHRATE_I 0.2 # Ducted-Fan 俯仰角速度环 I 增益，用于消除俯仰角速度稳态误差
 
-param set-default DF_YAWRATE_P 0.2
-param set-default DF_YAWRATE_I 0.1
+param set-default DF_YAWRATE_P 0.2 # Ducted-Fan 偏航角速度环 P 增益，决定偏航角速度误差的比例修正力度
+param set-default DF_YAWRATE_I 0.1 # Ducted-Fan 偏航角速度环 I 增益，用于消除偏航角速度稳态误差
 
 param set-default MC_PITCH_P 2
 param set-default MC_ROLL_P 2
@@ -44,31 +45,38 @@ param set-default MPC_Z_VEL_D_ACC 0.0
 
 # Force and motor-output contract.
 #
-# The controller publishes normalized thrust demand. The allocator solves for
-# normalized motor thrust u_T, and FunctionMotors converts u_T to a motor
+# The controller publishes normalized thrust demand. 
+# The allocator solves for normalized motor thrust u_T, 
+# and FunctionMotors converts（转换） u_T to a motor
 # command x using:
 #   u_T = THR_MDL_FAC * x^2 + (1 - THR_MDL_FAC) * x
 # For this Gazebo rotor the physical model is:
 #   omega = x * maxRotVelocity
 #   F = motorConstant * omega^2
 #
+# x：最终发给电机的归一化指令，范围通常是 0 ~ 1
+# u_T：控制分配器想要的归一化推力，范围也通常是 0 ~ 1
+# THR_MDL_FAC：推力模型因子，用来描述“电机指令到推力”更像线性还是平方关系
 # With THR_MDL_FAC=1, u_T is exactly F/Fmax.
 #   Fmax = motorConstant * maxRotVelocity^2 = 2.937612e-5 * 1200^2 = 42.3016 N
 #   hover = mg/Fmax = 2.1 * 9.8 / 42.3016 = 0.4865
+
 param set-default MPC_THR_HOVER 0.4865
 param set-default THR_MDL_FAC 1
-param set-default RTL_RETURN_ALT 2.5
-param set-default RTL_DESCEND_ALT 2.5
+param set-default RTL_RETURN_ALT 2.5     #返航高度
+param set-default RTL_DESCEND_ALT 2.5    #开始下降/进入降落流程前保持或下降到的高度
 
 
-param set-default CA_ROTOR_COUNT 1
+param set-default CA_ROTOR_COUNT 1      # 电机数量
 param set-default CA_ROTOR0_AX 0
 param set-default CA_ROTOR0_AY 0
-param set-default CA_ROTOR0_AZ -1
+param set-default CA_ROTOR0_AZ -1       # 电机推力方向沿机体系 -Z 方向
 param set-default CA_ROTOR0_PX 0
 param set-default CA_ROTOR0_PY 0
-param set-default CA_ROTOR0_PZ -0.04
-# Rotor effectiveness in the allocation matrix.
+param set-default CA_ROTOR0_PZ -0.04    # 电机位置距离质心 4 cm
+
+
+# Rotor effectiveness in the allocation matrix（矩阵）.
 #
 # Ducted Fan uses the same B_user * U contract for motors and control surfaces:
 #   motor physical coordinate: F_motor [N] = DF_MOT_MAX * u_T
@@ -91,6 +99,30 @@ param set-default CA_ROTOR0_PZ -0.04
 #   B_alloc,Mz = 0.1986 rad/s^2 at u_T=1
 # It is much smaller than the control-surface yaw authority, so SHC09 ignores
 # the motor drag contribution for now and keeps KM=0.
+#
+# 分配矩阵中的旋翼效能。
+#
+# Ducted-Fan 对电机和控制舵面使用相同的 B_user * U 约定：
+#   电机物理坐标：F_motor [N] = DF_MOT_MAX * u_T
+#   舵机物理坐标：delta [rad] = DF_CS_MAX * u_servo
+#
+# PX4 按如下方式构造电机列：
+#   thrust = CT * axis
+#   moment = CT * (position x axis) - CT * KM * axis
+#
+# 对 SHC09 来说，axis = [0, 0, -1]，CT=1 表示 B_user 的力行把
+# 以 N 为单位的电机推力映射到以 N 为单位的机体系力：
+#   B_user,Fz = -1 N/N
+#   B_alloc,Fz = -DF_MOT_MAX = -42.3016 N，当 u_T=1 时
+#
+# SDF 旋翼阻力模型为 M_drag = F * momentConstant。SHC09 的控制舵面行
+# 表示角加速度效能，因此 B_user 中真实的电机阻力系数应为每 N 推力产生的
+# 偏航角加速度：
+#   KM = momentConstant / Iz = 2.35e-5 / 0.005006 = 0.00469
+#   B_user,Mz = 0.00469 rad/s^2/N
+#   B_alloc,Mz = 0.1986 rad/s^2，当 u_T=1 时
+# 它比控制舵面的偏航控制权限小得多，所以 SHC09 目前忽略电机阻力贡献，
+# 并保持 KM=0。
 param set-default CA_ROTOR0_CT 1
 param set-default CA_ROTOR0_KM 0
 
@@ -99,19 +131,28 @@ param set-default CA_ROTOR0_KM 0
 # B maps control-surface deflection in radians to body angular acceleration.
 # DF_CS_MAX maps normalized actuator_servos +/-1 to +/-0.6981 rad, so the
 # allocation matrix uses B_user * DF_CS_MAX before PX4 row normalization.
-param set-default DF_CS_MAX 0.6981
-param set-default DF_MOT_MAX 42.3016
-param set-default DF_MOT_ACTUATOR 0
-param set-default DF_CS_ACTUATOR 1
-param set-default DF_CS_TCONST 0.01
-# param set-default DF_MOT_TCONST 0.03 #(in motor plugins)
-param set-default DF_MOT_CUTOFF 8
-param set-default DF_CS_CUTOFF 8
+#
+# 控制舵面的物理模型来自 control_allocation/SHC09.m 和 SDF 悬停滑流模型。
+# B 将以弧度为单位的控制舵面偏转量映射为机体系角加速度。
+# DF_CS_MAX 将归一化 actuator_servos 的 +/-1 映射为 +/-0.6981 rad，
+# 因此在 PX4 行归一化之前，分配矩阵使用 B_user * DF_CS_MAX。
+param set-default DF_CS_MAX 0.6981 # Ducted-Fan 控制舵面最大偏转角，归一化舵机指令 +/-1 对应 +/-0.6981 rad
+param set-default DF_MOT_MAX 42.3016 # Ducted-Fan 电机最大物理推力，用于把归一化电机推力换算为 N
+param set-default DF_MOT_ACTUATOR 0 # Ducted-Fan 电机执行器起始索引，对应 actuator_motors 中的电机通道
+param set-default DF_CS_ACTUATOR 1 # Ducted-Fan 控制舵面执行器起始索引，对应 actuator_servos 中的舵面通道
+param set-default DF_CS_TCONST 0.01 # Ducted-Fan 控制舵面一阶响应时间常数，用于描述舵面动态延迟
+# param set-default DF_MOT_TCONST 0.03 # Ducted-Fan 电机一阶响应时间常数，此处由电机插件设置
+param set-default DF_MOT_CUTOFF 8 # Ducted-Fan 电机动态低通截止频率，用于执行器动态滤波
+param set-default DF_CS_CUTOFF 8 # Ducted-Fan 控制舵面动态低通截止频率，用于舵面动态滤波
 
 # Acceleration INDI uses the physical force rows in allocation_value:
 #   thrust_acc_0 = R_to_ned * (B_force * u_ultimate_phys) / DF_ACC_MASS
 # The motor model above only enters through DF_MOT_MAX and B_user,Fz=-1.
-param set-default DF_ACC_MASS 2.1
+#
+# 加速度 INDI 使用 allocation_value 中的物理力行：
+#   thrust_acc_0 = R_to_ned * (B_force * u_ultimate_phys) / DF_ACC_MASS
+# 上面的电机模型只通过 DF_MOT_MAX 和 B_user,Fz=-1 起作用。
+param set-default DF_ACC_MASS 2.1 # Ducted-Fan 加速度 INDI 使用的飞行器质量，用于将物理力换算为加速度
 
 param set-default CA_SV_CS_COUNT 6
 param set-default CA_SV_CS0_TRQ_R -11.2359
